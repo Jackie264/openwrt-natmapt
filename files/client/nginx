@@ -1,0 +1,157 @@
+#!/bin/bash
+# This script updates the Nginx Location configuration with a new public port
+# Depends on: curl, jq, common.sh
+
+# Load shared functions
+. /usr/lib/natmap/common.sh
+
+# Basic Configuration
+BASE_URL="http://192.168.2.90:48080"  # Nginx WebUI base URL
+USERNAME="<username>"                # Login username
+PASSWORD="<password>"                # Login password
+KEYWORDS="<serverName>"              # Server name keyword for filtering
+
+# Variables to be populated dynamically
+INIT_GLOBAL_VAR TOKEN SERVER_ID LOCATION_ID LOCATION_PATH LOCATION_TYPE LOCATION_VALUE
+
+# Step 1: Fetch Token
+get_token() {
+	echo "Fetching Token..."
+	response=$($CURL -s -X GET "${BASE_URL}/token/getToken?pass=${PASSWORD}&name=${USERNAME}")
+	
+	# Check if the response contains success: true
+	success=$(echo "$response" | jq -r '.success')
+
+	if [ "$success" != "true" ]; then
+		echo "Failed to fetch Token!"
+		exit 1
+	fi
+
+	# Extract token from the 'obj' field
+	TOKEN=$(echo "$response" | jq -r '.obj.token')
+	if [ -z "$TOKEN" ]; then
+		echo "Token not found in the response!"
+		exit 1
+	fi
+	# echo "Token acquired: $TOKEN"
+}
+
+# Step 2: Fetch Server ID
+get_server_id() {
+	echo "Fetching Server ID..."
+	response=$($CURL -s -X GET -H "token: ${TOKEN}" "${BASE_URL}/api/server/getPage?current=1&limit=10&keywords=${KEYWORDS}")
+	success=$(echo "$response" | jq -r '.success')
+
+	if [ "$success" != "true" ]; then
+		echo "Failed to fetch Server ID!"
+		exit 1
+	fi
+
+	# Extract the server ID from the records
+	SERVER_ID=$(echo "$response" | jq -r '.obj.records[0].id')
+	if [ -z "$SERVER_ID" ]; then
+		echo "Server ID not found in the response!"
+		exit 1
+	fi
+	# echo "Server ID: $SERVER_ID"
+}
+
+# Step 3: Fetch Location Information
+get_location() {
+	echo "Fetching Location Information..."
+	response=$($CURL -s -X GET -H "token: ${TOKEN}" \
+		"${BASE_URL}/api/server/getLocationByServerId?serverId=${SERVER_ID}")
+	success=$(echo "$response" | jq -r '.success')
+
+	if [ "$success" != "true" ]; then
+		echo "Failed to fetch Location information!"
+		exit 1
+	fi
+
+	# Extract location details from the 'obj' array
+	LOCATION_ID=$(echo "$response" | jq -r '.obj[0].id')
+	LOCATION_PATH=$(echo "$response" | jq -r '.obj[0].path')
+	LOCATION_TYPE=$(echo "$response" | jq -r '.obj[0].type')
+	LOCATION_VALUE=$(echo "$response" | jq -r '.obj[0].value')
+
+	if [ -z "$LOCATION_ID" ] || [ -z "$LOCATION_PATH" ] || [ -z "$LOCATION_VALUE" ]; then
+		echo "Failed to fetch Location details!"
+		exit 1
+	fi
+
+	# echo "Location details: ID=${LOCATION_ID}, Path=${LOCATION_PATH}, Type=${LOCATION_TYPE}, Value=${LOCATION_VALUE}"
+}
+
+# Step 4: Update Location Value
+update_location() {
+	echo "Updating Location Value..."
+	# Retain base value and replace only the port
+	BASE_URL_WITHOUT_PORT=$(echo "${LOCATION_VALUE}" | sed -E 's|:([0-9]+)$||')
+	NEW_VALUE="${BASE_URL_WITHOUT_PORT}:${PORT}"
+
+	# echo "New Location Value: $NEW_VALUE"
+
+	response=$($CURL -s -X GET -H "token: ${TOKEN}" \
+		"${BASE_URL}/api/server/insertOrUpdateLocation?type=${LOCATION_TYPE}&id=${LOCATION_ID}&value=${NEW_VALUE}&path=${LOCATION_PATH}&serverId=${SERVER_ID}")
+	success=$(echo "$response" | jq -r '.success')
+
+	if [ "$success" != "true" ]; then
+		echo "Failed to update Location value!"
+		exit 1
+	fi
+	echo "Location value updated successfully!"
+}
+
+# Step 5: Replace Nginx Configuration
+replace_nginx_conf() {
+	echo "Replacing Nginx configuration..."
+	response=$($CURL -s -X GET -H "token: ${TOKEN}" "${BASE_URL}/api/nginx/replace")
+	success=$(echo "$response" | jq -r '.success')
+
+	if [ "$success" != "true" ]; then
+		echo "Failed to replace Nginx configuration!"
+		exit 1
+	fi
+	echo "Nginx configuration replaced successfully!"
+}
+
+# Step 6: Reload Nginx
+reload_nginx() {
+	echo "Reloading Nginx..."
+	response=$($CURL -s -X GET -H "token: ${TOKEN}" "${BASE_URL}/api/nginx/reload")
+	success=$(echo "$response" | jq -r '.success')
+
+	if [ "$success" != "true" ]; then
+		echo "Failed to reload Nginx!"
+		exit 1
+	fi
+	echo "Nginx reloaded successfully!"
+}
+
+# Main Function
+main() {
+	if [ $# -ne 4 ]; then
+		echo "Usage: $0 <Public IP> <Public Port> <Internal IP> <Internal Port>"
+		exit 1
+	fi
+
+	IP="$1"         # Public IP
+	PORT="$2"       # Public Port
+	INNER_IP="$3"   # Internal Service IP
+	INNER_PORT="$4" # Internal Service Port
+
+	get_token
+	get_server_id
+	get_location
+	update_location
+	replace_nginx_conf
+	reload_nginx
+	echo "All steps completed successfully!"
+ 
+	# Log the success message with timestamp
+	local timestamp
+	timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+	logger -t natmap-update "Nginx conf updated successfully: New Location Value -> $NEW_VALUE [$timestamp]"
+}
+
+main "$@"
