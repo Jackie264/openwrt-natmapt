@@ -10,6 +10,7 @@ shift 6
 . /usr/share/libubox/jshn.sh
 INITD='/etc/init.d/natmap'
 STATUS_PATH='/var/run/natmap'
+LAST_IP_PORT_FILE="$STATUS_PATH/$SECTIONID.last_ip_port"
 
 # fallloop <retry time> <func> [args...]
 fallloop() {
@@ -47,54 +48,57 @@ if [ -n "$REFRESH" ]; then
 	$REFRESH "$(json_dump)"
 fi
 
-# ----------------------------------
-# Use MD5 hash to compare the states
-# to avoid unnecessary notifications or operations
-CURRENT_STATUS_FILE="$STATUS_PATH/$PPID.json"
-LAST_HASH_FILE="$STATUS_PATH/$SECTIONID.last.md5"
+# Check last ip and port
+last_ip=""
+last_port=""
+if [ -f "$LAST_IP_PORT_FILE" ]; then
+	last_ip=$(head -n 1 "$LAST_IP_PORT_FILE")
+	last_port=$(tail -n 1 "$LAST_IP_PORT_FILE")
+fi
 
-if [ -f "$LAST_HASH_FILE" ]; then
-	CURRENT_HASH=$(md5sum "$CURRENT_STATUS_FILE" | awk '{print $1}')
-	LAST_HASH=$(cat "$LAST_HASH_FILE")
+changed=0
+if [ "$ip" != "$last_ip" -o "$port" != "$last_port" ]; then
+	changed=1
+fi
 
-	if [ "$LAST_HASH" = "$CURRENT_HASH" ]; then
-		logger "No change in NAT mapping state, skipping NOTIFY."
-		exit 0
+if [ "$changed" = "1" ]; then
+	# NAT mapping state changed, executing NOTIFY and DDNS
+	if [ -n "$NOTIFY" ]; then
+		_text="$(jsonfilter -qs "$NOTIFY_PARAM" -e '@["text"]')"
+		[ -z "$_text" ] && _text="NATMap: ${COMMENT:+$COMMENT: }[${protocol^^}] $inner_ip:$inner_port -> $ip:$port" \
+		|| _text="$(echo "$_text" | sed " \
+			s|<comment>|$COMMENT|g; \
+			s|<protocol>|$protocol|g; \
+			s|<inner_ip>|$inner_ip|g; \
+			s|<inner_port>|$inner_port|g; \
+			s|<ip>|$ip|g; \
+			s|<port>|$port|g")"
+		json_init
+		json_load "$NOTIFY_PARAM"
+		json_add_string comment "$COMMENT"
+		json_add_string text "$_text"
+		fallloop 5m 4 $NOTIFY "$(json_dump)" &
 	fi
-fi
 
-md5sum "$CURRENT_STATUS_FILE" | awk '{print $1}' > "$LAST_HASH_FILE"
-# ----------------------------------
+	if [ -n "$DDNS" ]; then
+		_hostype="$(jsonfilter -qs "$DDNS_PARAM" -e '@["hostype"]')"
+		_svcparams="$(jsonfilter -qs "$DDNS_PARAM" -e '@["https_svcparams"]')"
+		_svcparams="$(echo "$_svcparams" | sed -E "s,\s*(port=\d*|$), port=${port},")" # port
+		[ "$_hostype" = A ]    && _svcparams="$(echo "$_svcparams" | sed -E "s|\b(ipv4hint=)[\d\.]*|\1${ip}|")" # ipv4hint
+		[ "$_hostype" = AAAA ] && _svcparams="$(echo "$_svcparams" | sed -E "s|\b(ipv6hint=)[[:xdigit:]:\.]*|\1${ip}|")" # ipv6hint
+		json_init
+		json_load "$DDNS_PARAM"
+		json_add_string https_svcparams "$_svcparams"
+		json_add_string ip "$ip"
+		json_add_int port "$port"
+		fallloop 5m 4 $DDNS "$(json_dump)" &
+	fi
 
-if [ -n "$NOTIFY" ]; then
-	_text="$(jsonfilter -qs "$NOTIFY_PARAM" -e '@["text"]')"
-	[ -z "$_text" ] && _text="NATMap: ${COMMENT:+$COMMENT: }[${protocol^^}] $inner_ip:$inner_port -> $ip:$port" \
-	|| _text="$(echo "$_text" | sed " \
-		s|<comment>|$COMMENT|g; \
-		s|<protocol>|$protocol|g; \
-		s|<inner_ip>|$inner_ip|g; \
-		s|<inner_port>|$inner_port|g; \
-		s|<ip>|$ip|g; \
-		s|<port>|$port|g")"
-	json_init
-	json_load "$NOTIFY_PARAM"
-	json_add_string comment "$COMMENT"
-	json_add_string text "$_text"
-	fallloop 5m 4 $NOTIFY "$(json_dump)" &
-fi
-
-if [ -n "$DDNS" ]; then
-	_hostype="$(jsonfilter -qs "$DDNS_PARAM" -e '@["hostype"]')"
-	_svcparams="$(jsonfilter -qs "$DDNS_PARAM" -e '@["https_svcparams"]')"
-	_svcparams="$(echo "$_svcparams" | sed -E "s,\s*(port=\d*|$), port=${port},")" # port
-	[ "$_hostype" = A ]    && _svcparams="$(echo "$_svcparams" | sed -E "s|\b(ipv4hint=)[\d\.]*|\1${ip}|")" # ipv4hint
-	[ "$_hostype" = AAAA ] && _svcparams="$(echo "$_svcparams" | sed -E "s|\b(ipv6hint=)[[:xdigit:]:\.]*|\1${ip}|")" # ipv6hint
-	json_init
-	json_load "$DDNS_PARAM"
-	json_add_string https_svcparams "$_svcparams"
-	json_add_string ip "$ip"
-	json_add_int port "$port"
-	fallloop 5m 4 $DDNS "$(json_dump)" &
+	# Update ip and port
+	echo "$ip" > "$LAST_IP_PORT_FILE"
+	echo "$port" >> "$LAST_IP_PORT_FILE"
+else
+	logger "No change in NAT mapping state, skip NOTIFY and DDNS"
 fi
 
 [ -n "${CUSTOM_SCRIPT}" ] && {
