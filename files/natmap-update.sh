@@ -47,23 +47,24 @@ if [ -n "$REFRESH" ]; then
 	$REFRESH "$(json_dump)"
 fi
 
-# 检查之前的状态文件是否存在
+# ----------------------------------
+# Use MD5 hash to compare the states
+# to avoid unnecessary notifications or operations
 CURRENT_STATUS_FILE="$STATUS_PATH/$PPID.json"
 LAST_HASH_FILE="$STATUS_PATH/$SECTIONID.last.md5"
 
 if [ -f "$LAST_HASH_FILE" ]; then
-	# 计算 MD5 哈希值，对比新旧状态是否一致
 	CURRENT_HASH=$(md5sum "$CURRENT_STATUS_FILE" | awk '{print $1}')
 	LAST_HASH=$(cat "$LAST_HASH_FILE")
 
 	if [ "$LAST_HASH" = "$CURRENT_HASH" ]; then
-		logger "natmap-update.sh: No change in NAT mapping state, skipping NOTIFY."
+		logger "No change in NAT mapping state, skipping NOTIFY."
 		exit 0
 	fi
 fi
 
-# 状态有变化，更新 MD5 记录
 md5sum "$CURRENT_STATUS_FILE" | awk '{print $1}' > "$LAST_HASH_FILE"
+# ----------------------------------
 
 if [ -n "$NOTIFY" ]; then
 	_text="$(jsonfilter -qs "$NOTIFY_PARAM" -e '@["text"]')"
