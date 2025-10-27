@@ -21,10 +21,13 @@ jobs:
         include:
           - version: openwrt-24.10
             target: x86_64
+            index: 0
           - version: openwrt-24.10
             target: aarch64_cortex-a53
+            index: 1
           - version: openwrt-24.10
             target: arm_cortex-a7_neon-vfpv4
+            index: 2
 
     steps:
       - name: 🧾 Checkout repo
