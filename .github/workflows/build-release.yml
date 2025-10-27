@@ -144,7 +144,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.main_full_version }}
           name: Build-v${{ steps.version.outputs.main_version }}
-          files: ./release-assets/**/*.ipk
+          files: ./release-assets/**/natmapt-*.ipk
           draft: false
           prerelease: false
           overwrite_files: true
@@ -184,6 +184,13 @@ jobs:
         run: |
           mkdir -p custom-packages/common
 
+          cd custom-packages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add common/
+
+          CHANGED=$(git diff --cached --name-only || true)
+
           MAIN_CHANGED=$(git status --short | grep -E '.*natmapt_.*\.ipk' || true)
           SUB_CHANGED=$(git status --short | grep -E '.*natmapt-(client|notify).*_all\.ipk' || true)
 
@@ -196,30 +203,7 @@ jobs:
           else
             COMMIT_MSG=$(git log -1 --pretty=%B)
             echo "No updates detected, reusing last commit message: $COMMIT_MSG"
-            exit 0
           fi
 
-          cd custom-packages
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add common/
-          echo "=== Git status (working tree vs index) ==="
-          git status --short
-
-          echo
-          echo "=== Untracked files (not staged at all) ==="
-          git ls-files --others --exclude-standard
-
-          echo
-          echo "=== Diff between index and HEAD (what would be committed) ==="
-          git diff --cached --stat
-
-          echo
-          echo "=== Names of files staged for commit ==="
-          git diff --cached --name-only
-
-          echo
-          echo "=== Diff between working tree and HEAD (all changes, staged or not) ==="
-          git diff --stat
           git commit -m "$COMMIT_MSG" || echo "No changes"
           git push
