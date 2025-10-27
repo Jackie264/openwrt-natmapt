@@ -186,8 +186,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          MAIN_CHANGED=$(git status --short | grep -E 'natmapt_.*\.ipk' || true)
-          SUB_CHANGED=$(git status --short | grep -E 'natmapt-(client|notify).*_all\.ipk' || true)
+          MAIN_CHANGED=$(git status --short | grep -E '.*natmapt_.*\.ipk' || true)
+          SUB_CHANGED=$(git status --short | grep -E '.*natmapt-(client|notify).*_all\.ipk' || true)
 
           if [ -n "$MAIN_CHANGED" ] && [ -n "$SUB_CHANGED" ]; then
             COMMIT_MSG="Update natmapt v${{ steps.version.outputs.main_full_version }} + scripts v${{ steps.version.outputs.scripts_version }}"
