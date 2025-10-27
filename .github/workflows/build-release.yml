@@ -164,11 +164,12 @@ jobs:
           for dir in release-assets/*; do
             [ -d "$dir" ] || continue
             bn=$(basename "$dir")
-            if [[ "$bn" =~ -common- ]]; then
+            if [[ "$bn" =~ -common-openwrt- ]]; then
               arch="common"
             else
-              arch=$(echo "$bn" | sed -E 's/^natmapt-([^ ]+)-.*/\1/')
+              arch=$(echo "$bn" | sed -E 's/^natmapt-([^ ]+)-openwrt.*$/\1/')
             fi
+            echo "Processing $bn → $arch"
             mkdir -p "custom-packages/$arch"
             for ipk in "$dir"/*.ipk; do
               base=$(basename "$ipk")
