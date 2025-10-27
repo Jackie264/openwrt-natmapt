@@ -19,11 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - version: openwrt-24.10
+          - version: openwrt-24.10.4
             target: x86_64
-          - version: openwrt-24.10
+          - version: openwrt-24.10.4
             target: aarch64_cortex-a53
-          - version: openwrt-24.10
+          - version: openwrt-24.10.4
             target: arm_cortex-a7_neon-vfpv4
 
     steps:
