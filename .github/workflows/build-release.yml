@@ -190,17 +190,17 @@ jobs:
           SUB_CHANGED=$(git status --short | grep -E '.*natmapt-(client|notify).*_all\.ipk' || true)
 
           if [ -n "$MAIN_CHANGED" ] && [ -n "$SUB_CHANGED" ]; then
-            COMMIT_MSG="Update natmapt v${{ steps.version.outputs.main_full_version }} + scripts v${{ steps.version.outputs.scripts_version }}"
+            COMMIT_MSG="Update to v${{ steps.version.outputs.main_full_version }} + scripts v${{ steps.version.outputs.scripts_version }}"
           elif [ -n "$MAIN_CHANGED" ]; then
-            COMMIT_MSG="Update natmapt v${{ steps.version.outputs.main_full_version }}"
+            COMMIT_MSG="Update to v${{ steps.version.outputs.main_full_version }}"
           elif [ -n "$SUB_CHANGED" ]; then
-            COMMIT_MSG="Update natmapt scripts v${{ steps.version.outputs.scripts_version }}"
+            COMMIT_MSG="Update to v${{ steps.version.outputs.scripts_version }}"
           else
             COMMIT_MSG=$(git log -1 --pretty=%B)
             echo "No updates detected, reusing last commit message: $COMMIT_MSG"
             exit 0
           fi
 
-          git add .
+          git add common/
           git commit -m "$COMMIT_MSG" || echo "No changes"
           git push
