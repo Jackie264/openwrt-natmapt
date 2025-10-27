@@ -118,14 +118,32 @@ jobs:
 
       - name: 🗃️ Collect unique artifacts
         run: |
+          set -euo pipefail
           mkdir -p release-unique
-          find ./release-assets -type f -name "*.ipk" | while read -r f; do
-            base=$(basename "$f")
-            if [ ! -f "release-unique/$base" ]; then
-              cp "$f" release-unique/
-            fi
+          declare -A SEEN=()
+
+          for dir in release-assets/*-openwrt-*; do
+            [ -d "$dir" ] || continue
+            archdir=$(basename "$dir" | sed -E 's/^[^-]+-([^ ]+)-openwrt.*$/\1/')
+            [ "$archdir" = "all" ] && archdir="common"
+
+            echo "Processing artifact dir: $dir → arch=$archdir"
+            mkdir -p "release-unique/$archdir"
+
+            for f in $(find "$dir" -type f -name "*.ipk"); do
+              base=$(basename "$f")
+              if [[ -n "${SEEN[$base]:-}" ]]; then
+                echo "Skip duplicate: $base (already from ${SEEN[$base]})"
+                continue
+              fi
+              cp "$f" "release-unique/$archdir/$base"
+              SEEN[$base]="$archdir"
+              echo "Collect: $base → $archdir/"
+            done
           done
-          ls -la release-unique
+
+          echo "Collected tree:"
+          ls -laR release-unique
 
       - name: 🗃️ Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -148,20 +166,23 @@ jobs:
 
       - name: 📂 Copy artifacts into repo
         run: |
-          find ./release-unique -type f -name "*.ipk" | while read -r f; do
-            base=$(basename "$f")
-            pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
-            archdir=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
+          set -euo pipefail
+          for archdir in release-unique/*; do
+            [ -d "$archdir" ] || continue
+            arch=$(basename "$archdir")
+            echo "Processing arch: $arch"
+            mkdir -p "custom-packages/$arch"
 
-            if [ "$archdir" = "all" ]; then
-              archdir="common"
-            fi
-            
-            echo "Processing $pkgname for arch $archdir"
-            mkdir -p custom-packages/$archdir
-            echo "Cleaning old versions of $pkgname in $archdir"
-            rm -f custom-packages/$archdir/${pkgname}_*.ipk
-            cp "$f" custom-packages/$archdir/
+            for ipk in "$archdir"/*.ipk; do
+              base=$(basename "$ipk")
+              pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
+
+              echo "Cleaning old versions of $pkgname in $arch"
+              rm -f "custom-packages/$arch/${pkgname}_*.ipk"
+
+              echo "Copy: $base → custom-packages/$arch/"
+              cp -a "$ipk" "custom-packages/$arch/"
+            done
           done
           ls -laR custom-packages
 
