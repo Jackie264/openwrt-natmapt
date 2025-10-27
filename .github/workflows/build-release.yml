@@ -171,7 +171,7 @@ jobs:
             fi
             echo "Processing $bn → $arch"
             mkdir -p "custom-packages/$arch"
-            for ipk in "$dir"/*.ipk; do
+            for ipk in "$dir"/natmapt*.ipk; do
               base=$(basename "$ipk")
               pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
               rm -f "custom-packages/$arch/${pkgname}_*.ipk"
