@@ -116,12 +116,23 @@ jobs:
         with:
           path: ./release-assets
 
+      - name: 🗃️ Collect unique artifacts
+        run: |
+          mkdir -p release-unique
+          find ./release-assets -type f -name "*.ipk" | while read -r f; do
+            base=$(basename "$f")
+            if [ ! -f "release-unique/$base" ]; then
+              cp "$f" release-unique/
+            fi
+          done
+          ls -la release-unique
+
       - name: 🗃️ Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.main_full_version }}
           name: Build-v${{ steps.version.outputs.main_version }}
-          files: ./release-assets/**/*.ipk
+          files: ./release-unique/**/*.ipk
           draft: false
           prerelease: false
           overwrite_files: true
@@ -137,7 +148,7 @@ jobs:
 
       - name: 📂 Copy artifacts into repo
         run: |
-          find ./release-assets -type f -name "*.ipk" | while read -r f; do
+          find ./release-unique -type f -name "*.ipk" | while read -r f; do
             base=$(basename "$f")
             pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
             archdir=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
