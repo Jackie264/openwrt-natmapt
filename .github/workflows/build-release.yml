@@ -78,13 +78,33 @@ jobs:
             ls -laR bin/packages/ 2>/dev/null || echo "No packages directory"
           fi
 
-      - name: 📦 Upload artifact for ${{ matrix.target }}
-        uses: actions/upload-artifact@v5
+      - name: 🧹 Collect arch and common artifacts
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          mkdir -p "artifact-arch/${target}" "artifact-common"
+
+          find bin/packages -type f -name "*.ipk" | while read -r f; do
+            base=$(basename "$f")
+            if [[ "$base" =~ _all\.ipk$ ]]; then
+              cp -a "$f" "artifact-common/$base"
+            else
+              cp -a "$f" "artifact-arch/${target}/$base"
+            fi
+          done
+
+      - name: 📦 Upload arch artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PKG_NAME }}-${{ matrix.target }}-${{ matrix.version }}
-          path: |
-            bin/packages/*/jackie264/natmapt*.ipk
-          if-no-files-found: ignore
+          name: natmapt-${{ matrix.target }}-${{ matrix.version }}
+          path: artifact-arch/${{ matrix.target }}/
+
+      - name: 📦 Upload common artifact (only once)
+        if: ${{ matrix.index == 0 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: natmapt-common-${{ matrix.version }}
+          path: artifact-common/
 
   release:
     name: Release ${{ github.repository }}
@@ -116,35 +136,6 @@ jobs:
         with:
           path: ./release-assets
 
-      - name: 🗃️ Collect unique artifacts
-        run: |
-          set -euo pipefail
-          mkdir -p release-unique
-          declare -A SEEN=()
-
-          for dir in release-assets/*-openwrt-*; do
-            [ -d "$dir" ] || continue
-            archdir=$(basename "$dir" | sed -E 's/^[^-]+-([^ ]+)-openwrt.*$/\1/')
-            [ "$archdir" = "all" ] && archdir="common"
-
-            echo "Processing artifact dir: $dir → arch=$archdir"
-            mkdir -p "release-unique/$archdir"
-
-            for f in $(find "$dir" -type f -name "*.ipk"); do
-              base=$(basename "$f")
-              if [[ -n "${SEEN[$base]:-}" ]]; then
-                echo "Skip duplicate: $base (already from ${SEEN[$base]})"
-                continue
-              fi
-              cp "$f" "release-unique/$archdir/$base"
-              SEEN[$base]="$archdir"
-              echo "Collect: $base → $archdir/"
-            done
-          done
-
-          echo "Collected tree:"
-          ls -laR release-unique
-
       - name: 🗃️ Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -167,20 +158,19 @@ jobs:
       - name: 📂 Copy artifacts into repo
         run: |
           set -euo pipefail
-          for archdir in release-unique/*; do
-            [ -d "$archdir" ] || continue
-            arch=$(basename "$archdir")
-            echo "Processing arch: $arch"
+          for dir in release-assets/*; do
+            [ -d "$dir" ] || continue
+            bn=$(basename "$dir")
+            if [[ "$bn" =~ -common- ]]; then
+              arch="common"
+            else
+              arch=$(echo "$bn" | sed -E 's/^natmapt-([^ ]+)-.*/\1/')
+            fi
             mkdir -p "custom-packages/$arch"
-
-            for ipk in "$archdir"/*.ipk; do
+            for ipk in "$dir"/*.ipk; do
               base=$(basename "$ipk")
               pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
-
-              echo "Cleaning old versions of $pkgname in $arch"
               rm -f "custom-packages/$arch/${pkgname}_*.ipk"
-
-              echo "Copy: $base → custom-packages/$arch/"
               cp -a "$ipk" "custom-packages/$arch/"
             done
           done
