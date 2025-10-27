@@ -144,7 +144,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.main_full_version }}
           name: Build-v${{ steps.version.outputs.main_version }}
-          files: ./release-unique/**/*.ipk
+          files: ./release-assets/**/*.ipk
           draft: false
           prerelease: false
           overwrite_files: true
