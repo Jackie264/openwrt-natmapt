@@ -192,7 +192,9 @@ jobs:
           elif [ -n "$SUB_CHANGED" ]; then
             COMMIT_MSG="Update natmapt scripts v${{ steps.version.outputs.scripts_version }}"
           else
-            COMMIT_MSG="No package updates"
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            echo "No updates detected, reusing last commit message: $COMMIT_MSG"
+            exit 0
           fi
 
           git add .
