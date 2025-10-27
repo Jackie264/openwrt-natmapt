@@ -6,13 +6,16 @@ on:
         description: 'Target OpenWrt version. if empty the simple mode will be used.'
         required: false
         type: string
+  push:
+    branches:
+      - master
 
 jobs:
   check:
-    name: Calculating PKG_MIRROR_HASH of XX
+    name: Calculating PKG_MIRROR_HASH of natmapt
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # To push a branch
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
