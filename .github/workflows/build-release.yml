@@ -8,6 +8,7 @@ on:
       - master
     paths:
       - 'Makefile'
+      - 'files/**'
       - '!**/.github/**'
   workflow_dispatch:
 
