@@ -203,5 +203,23 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add common/
+          echo "=== Git status (working tree vs index) ==="
+          git status --short
+
+          echo
+          echo "=== Untracked files (not staged at all) ==="
+          git ls-files --others --exclude-standard
+
+          echo
+          echo "=== Diff between index and HEAD (what would be committed) ==="
+          git diff --cached --stat
+
+          echo
+          echo "=== Names of files staged for commit ==="
+          git diff --cached --name-only
+
+          echo
+          echo "=== Diff between working tree and HEAD (all changes, staged or not) ==="
+          git diff --stat
           git commit -m "$COMMIT_MSG" || echo "No changes"
           git push
