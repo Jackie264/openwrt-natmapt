@@ -183,7 +183,6 @@ jobs:
       - name: Update pkg artifacts
         run: |
           mkdir -p custom-packages/common
-          cd custom-packages
 
           MAIN_CHANGED=$(git status --short | grep -E '.*natmapt_.*\.ipk' || true)
           SUB_CHANGED=$(git status --short | grep -E '.*natmapt-(client|notify).*_all\.ipk' || true)
@@ -200,6 +199,7 @@ jobs:
             exit 0
           fi
 
+          cd custom-packages
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add common/
