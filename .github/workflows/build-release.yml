@@ -1,1 +1,124 @@
+permissions:
+  contents: write
+name: Build OpenWrt Package
 
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Makefile'
+      - '!**/.github/**'
+  workflow_dispatch:
+
+jobs:
+  build-main:
+    name: Build natmapt for ${{ matrix.version }} / ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: openwrt-24.10
+            target: x86_64
+          - version: openwrt-24.10
+            target: aarch64_cortex-a53
+          - version: openwrt-24.10
+            target: arm_cortex-a7_neon-vfpv4
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+
+      - name: 📛 Extract PKG_NAME from Makefile
+        run: |
+          PKG_NAME=$(grep -E '^PKG_NAME[:?]?=' Makefile | head -n1 | sed -E 's/PKG_NAME[:?]?= *//')
+          echo "PKG_NAME=$PKG_NAME" >> "$GITHUB_ENV"
+
+      - name: 🧰 Set up openwrt-netmapt feed structure
+        run: |
+          set -e
+          mkdir -p feed/jackie264
+          printf 'include $(TOPDIR)/feed/jackie264/*/Makefile\n' > feed/jackie264/custom.mk
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='feed' \
+            --exclude='.github' \
+            --exclude='LICENSE' \
+            --exclude='README.md' \
+            --exclude='SECURITY.md' \
+            ./ feed/jackie264/${PKG_NAME}/
+          
+      - name: 🧮 Compute ARCH
+        run: |
+          echo "ARCH=${{ matrix.target }}-${{ matrix.version }}" >> "$GITHUB_ENV"
+
+      - name: 🏗️ Build with OpenWrt SDK
+        uses: openwrt/gh-action-sdk@v9
+        env:
+          ARCH: ${{ env.ARCH }}
+          FEEDNAME: jackie264
+          PACKAGES: ${{ env.PKG_NAME }}
+          INDEX: 0
+          FEED_DIR: ${{ github.workspace }}/feed
+          NO_SHFMT_CHECK: 1
+          NO_REFRESH_CHECK: 1
+          
+      - name: 🔍 Debug build output
+        run: |
+          echo "=== Build directory structure ==="
+          find . -name "*.ipk" -type f 2>/dev/null || echo "No .ipk files found"
+          echo "=== bin directory structure ==="
+          ls -la bin/ 2>/dev/null || echo "No bin directory found"
+          if [ -d "bin/packages" ]; then
+            echo "=== packages directory structure ==="
+            find bin/packages/ -type f -name "*.ipk" 2>/dev/null || echo "No .ipk files in packages directory"
+            echo "=== Full packages directory tree ==="
+            ls -laR bin/packages/ 2>/dev/null || echo "No packages directory"
+          fi
+
+      - name: 📦 Upload artifact for ${{ matrix.target }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ env.PKG_NAME }}-${{ matrix.target }}-${{ matrix.version }}
+          path: |
+            bin/packages/*/jackie264/natmapt*.ipk
+          if-no-files-found: ignore
+
+  build-subpackages:
+    name: Build natmapt subpackages (arch-indep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+        
+      - name: 🧰 Set up sub-pkgs feed structure
+        run: |
+          set -e
+          mkdir -p feed/jackie264
+          printf 'include $(TOPDIR)/feed/jackie264/*/Makefile\n' > feed/jackie264/custom.mk
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='feed' \
+            --exclude='.github' \
+            --exclude='LICENSE' \
+            --exclude='README.md' \
+            --exclude='SECURITY.md' \
+            ./ feed/jackie264/${PKG_NAME}/
+            
+      - name: Build natmapt subpackages
+        uses: openwrt/gh-action-sdk@v9
+        env:
+          ARCH: x86_64-openwrt-24.10
+          FEEDNAME: jackie264
+          PACKAGES: "natmapt-client-script-transmission natmapt-client-script-deluge natmapt-notify-script-pushbullet natmapt-notify-script-pushover natmapt-notify-script-telegram"
+          FEED_DIR: ${{ github.workspace }}/feed
+          
+      - name: Upload subpackage artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: natmapt-subpackages-all-openwrt-24.10
+          path: bin/packages/*/jackie264/*all.ipk
+          if-no-files-found: error
