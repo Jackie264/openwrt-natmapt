@@ -34,6 +34,39 @@ jobs:
       - name: 🧾 Checkout repo
         uses: actions/checkout@v5
 
+      - name: 🏷️ Extract version for comparison
+        id: version
+        run: |
+          PKG_VERSION=$(grep -E '^PKG_UPSTREAM_VERSION *:?=' Makefile | head -n1 | cut -d= -f2 | tr -d '[:space:]')
+          PKG_RELEASE=$(grep -E '^PKG_RELEASE *:?=' Makefile | head -n1 | cut -d= -f2 | tr -d '[:space:]')
+          COMBINED_VERSION="v${PKG_VERSION}-${PKG_RELEASE}"
+          
+          echo "Checking for existing tag: $COMBINED_VERSION"
+          echo "tag_name=$COMBINED_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 🧐 Check if release already exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release $TAG does not exist. Proceeding with build."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+          
+      - name: 🛑 Skip build (cancel run) if release exists
+        if: steps.check_release.outputs.exists == 'true' && github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Version ${{ steps.version.outputs.tag_name }} is already released and this was not a manual run."
+          echo "Cancelling the workflow run."
+          gh api -X POST /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel
+
       - name: 📛 Extract PKG_NAME from Makefile
         run: |
           PKG_NAME=$(grep -E '^PKG_NAME[:?]?=' Makefile | head -n1 | sed -E 's/PKG_NAME[:?]?= *//')
