@@ -1,5 +1,6 @@
 permissions:
   contents: write
+  actions: write
 name: Build OpenWrt Package
 
 on:
