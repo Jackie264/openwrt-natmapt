@@ -1,0 +1,245 @@
+permissions:
+  contents: write 
+name: Build OpenWrt Package
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'Makefile'
+      - 'files/**'
+      - '!**/.github/**'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: 1. Check if build is required
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check_release.outputs.should_build }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      main_version: ${{ steps.version.outputs.main_version }}
+      main_full_version: ${{ steps.version.outputs.main_full_version }}
+      scripts_version: ${{ steps.version.outputs.scripts_version }}
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+
+      - name: 🏷️ Extract version info from Makefile
+        id: version
+        run: |
+          PKG_VERSION=$(grep -E '^PKG_UPSTREAM_VERSION *:?=' Makefile | head -n1 | cut -d= -f2 | tr -d '[:space:]')
+          PKG_RELEASE=$(grep -E '^PKG_RELEASE *:?=' Makefile | head -n1 | cut -d= -f2 | tr -d '[:space:]')
+          COMBINED_VERSION="${PKG_VERSION}-${PKG_RELEASE}"
+          
+          echo "tag_name=v${COMBINED_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "main_version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "main_full_version=$COMBINED_VERSION" >> "$GITHUB_OUTPUT"
+          
+          SCRIPTS_VERSION=$(grep -E '^SCRIPTS_VERSION *:?=' Makefile | head -n1 | cut -d= -f2 | tr -d '[:space:]')
+          echo "scripts_version=$SCRIPTS_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 🧐 Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag_name }}
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual run detected. Forcing build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists. Skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release $TAG does not exist. Proceeding with build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: 2. Build natmapt for ${{ matrix.version }} / ${{ matrix.target }}
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: openwrt-24.10
+            target: x86_64
+            index: 0
+          - version: openwrt-24.10
+            target: aarch64_cortex-a53
+            index: 1
+          - version: openwrt-24.10
+            target: arm_cortex-a7_neon-vfpv4
+            index: 2
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+
+      - name: 📛 Extract PKG_NAME from Makefile
+        run: |
+          PKG_NAME=$(grep -E '^PKG_NAME[:?]?=' Makefile | head -n1 | sed -E 's/PKG_NAME[:?]?= *//')
+          echo "PKG_NAME=$PKG_NAME" >> "$GITHUB_ENV"
+
+      - name: 🧰 Set up openwrt-netmapt feed structure
+        run: |
+          set -e
+          mkdir -p feed/jackie264
+          printf 'include $(TOPDIR)/feed/jackie264/*/Makefile\n' > feed/jackie264/custom.mk
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='feed' \
+            --exclude='.github' \
+            --exclude='LICENSE' \
+            --exclude='README.md' \
+            --exclude='SECURITY.md' \
+            ./ feed/jackie264/${PKG_NAME}/
+          
+      - name: 🧮 Compute ARCH
+        run: |
+          echo "ARCH=${{ matrix.target }}-${{ matrix.version }}" >> "$GITHUB_ENV"
+
+      - name: 🏗️ Build with OpenWrt SDK
+        uses: openwrt/gh-action-sdk@v9
+        env:
+          ARCH: ${{ env.ARCH }}
+          FEEDNAME: jackie264
+          PACKAGES: ${{ env.PKG_NAME }}
+          INDEX: 0
+          FEED_DIR: ${{ github.workspace }}/feed
+          NO_SHFMT_CHECK: 1
+          NO_REFRESH_CHECK: 1
+          
+      - name: 🔍 Debug build output
+        run: |
+          echo "=== Build directory structure ==="
+          find . -name "*.ipk" -type f 2>/dev/null || echo "No .ipk files found"
+          echo "=== bin directory structure ==="
+          ls -la bin/ 2>/dev/null || echo "No bin directory found"
+          if [ -d "bin/packages" ]; then
+            echo "=== packages directory structure ==="
+            find bin/packages/ -type f -name "*.ipk" 2>/dev/null || echo "No .ipk files in packages directory"
+            echo "=== Full packages directory tree ==="
+            ls -laR bin/packages/ 2>/dev/null || echo "No packages directory"
+          fi
+
+      - name: 🧹 Collect arch and common artifacts
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          mkdir -p "artifact-arch/${target}" "artifact-common"
+
+          find bin/packages -type f -name "*.ipk" | while read -r f; do
+            base=$(basename "$f")
+            if [[ "$base" =~ _all\.ipk$ ]]; then
+              cp -a "$f" "artifact-common/$base"
+            else
+              cp -a "$f" "artifact-arch/${target}/$base"
+            fi
+          done
+
+      - name: 📦 Upload arch artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: natmapt-${{ matrix.target }}-${{ matrix.version }}
+          path: artifact-arch/${{ matrix.target }}/
+
+      - name: 📦 Upload common artifact (only once)
+        if: ${{ matrix.index == 0 }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: natmapt-common-${{ matrix.version }}
+          path: artifact-common/
+
+  release:
+    name: 3. Release ${{ github.repository }}
+    needs: [check, build]
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 Checkout repo
+        uses: actions/checkout@v5
+      
+      - name: ⬇️ Download all build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: ./release-assets
+
+      - name: 🗃️ Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check.outputs.tag_name }}
+          name: Build-v${{ needs.check.outputs.main_version }}
+          files: ./release-assets/**/natmapt*.ipk
+          draft: false
+          prerelease: false
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout custom-packages repo
+        uses: actions/checkout@v5
+        with:
+          repository: OneNAS-space/custom-packages
+          token: ${{ secrets.CUSTOM_PACKAGES_TOKEN }}
+          path: custom-packages
+
+      - name: 📂 Copy artifacts into repo
+        run: |
+          set -euo pipefail
+          for dir in release-assets/*; do
+            [ -d "$dir" ] || continue
+            bn=$(basename "$dir")
+            if [[ "$bn" =~ -common-openwrt- ]]; then
+              arch="common"
+            else
+              arch=$(echo "$bn" | sed -E 's/^natmapt-([^ ]+)-openwrt.*$/\1/')
+            fi
+            echo "Processing $bn → $arch"
+            mkdir -p "custom-packages/$arch"
+            for ipk in "$dir"/natmapt*.ipk; do
+              base=$(basename "$ipk")
+              pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
+              rm -f "custom-packages/$arch/${pkgname}_*.ipk"
+              cp -a "$ipk" "custom-packages/$arch/"
+            done
+          done
+          ls -laR custom-packages
+
+      - name: Update pkg artifacts
+        run: |
+          mkdir -p custom-packages/common
+
+          cd custom-packages
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          CHANGED=$(git diff --cached --name-only || true)
+
+          MAIN_CHANGED=$(git status --short | grep -E '.*natmapt_.*\.ipk' || true)
+          SUB_CHANGED=$(git status --short | grep -E '.*natmapt-(client|notify).*_all\.ipk' || true)
+
+          if [ -n "$MAIN_CHANGED" ] && [ -n "$SUB_CHANGED" ]; then
+            COMMIT_MSG="Update to v${{ needs.check.outputs.main_full_version }} + scripts v${{ needs.check.outputs.scripts_version }}"
+          elif [ -n "$MAIN_CHANGED" ]; then
+            COMMIT_MSG="Update to v${{ needs.check.outputs.main_full_version }}"
+          elif [ -n "$SUB_CHANGED" ]; then
+            COMMIT_MSG="Update to v${{ needs.check.outputs.scripts_version }}"
+          else
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            echo "No updates detected, reusing last commit message: $COMMIT_MSG"
+          fi
+
+          git commit -m "$COMMIT_MSG" || echo "No changes"
+          git push
