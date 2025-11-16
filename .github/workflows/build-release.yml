@@ -197,6 +197,7 @@ jobs:
       - name: 📂 Copy artifacts into repo
         run: |
           set -euo pipefail
+          shopt -s nullglob
           for dir in release-assets/*; do
             [ -d "$dir" ] || continue
             bn=$(basename "$dir")
@@ -207,9 +208,12 @@ jobs:
             fi
             echo "Processing $bn → $arch"
             mkdir -p "custom-packages/$arch"
-            for ipk in "$dir"/natmapt*.ipk; do
+            for ipk in "$dir"/*.ipk; do
+              [ -f "$ipk" ] || continue
               base=$(basename "$ipk")
               pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
+              archsuffix=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
+              echo "Cleaning ${pkgname} (archsuffix=${archsuffix}) in ${arch}"
               rm -f "custom-packages/$arch/${pkgname}*_*.ipk"
               cp -a "$ipk" "custom-packages/$arch/"
             done
