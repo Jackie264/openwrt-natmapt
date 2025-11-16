@@ -208,13 +208,16 @@ jobs:
             fi
             echo "Processing $bn → $arch"
             mkdir -p "custom-packages/$arch"
-            for ipk in "$dir"/*.ipk; do
+            for ipk in "$dir"/natmapt*.ipk; do
               [ -f "$ipk" ] || continue
               base=$(basename "$ipk")
               pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
               archsuffix=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
-              echo "Cleaning ${pkgname} (archsuffix=${archsuffix}) in ${arch}"
-              rm -f "custom-packages/$arch/${pkgname}*_*.ipk"
+              echo "Processing file: $base  pkgname=$pkgname  archsuffix=$archsuffix"
+              echo "Will remove old matches in custom-packages/$arch:"
+              ls -1d "custom-packages/$arch/${pkgname}*_${archsuffix}.ipk" 2>/dev/null || echo "(none)"
+              rm -f "custom-packages/$arch/${pkgname}*_${archsuffix}.ipk"
+              echo "Copy $base -> custom-packages/$arch/"
               cp -a "$ipk" "custom-packages/$arch/"
             done
           done
