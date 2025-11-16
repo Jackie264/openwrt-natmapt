@@ -210,7 +210,7 @@ jobs:
             for ipk in "$dir"/natmapt*.ipk; do
               base=$(basename "$ipk")
               pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
-              rm -f "custom-packages/$arch/${pkgname}_*.ipk"
+              rm -f "custom-packages/$arch/${pkgname}*_*.ipk"
               cp -a "$ipk" "custom-packages/$arch/"
             done
           done
