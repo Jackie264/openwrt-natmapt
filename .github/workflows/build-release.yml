@@ -194,33 +194,60 @@ jobs:
           token: ${{ secrets.CUSTOM_PACKAGES_TOKEN }}
           path: custom-packages
 
-      - name: 📂 Copy artifacts into repo
+      - name: 📂 Copy artifacts into repo (robust clean)
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for dir in release-assets/*; do
-            [ -d "$dir" ] || continue
-            bn=$(basename "$dir")
-            if [[ "$bn" =~ -common-openwrt- ]]; then
-              arch="common"
-            else
-              arch=$(echo "$bn" | sed -E 's/^natmapt-([^ ]+)-openwrt.*$/\1/')
-            fi
-            echo "Processing $bn → $arch"
-            mkdir -p "custom-packages/$arch"
-            find "$dir" -maxdepth 1 -type f -name "natmapt*.ipk" -print0 |
-              while IFS= read -r -d '' f; do
-              base=$(basename "$f")
-              pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
-              archsuffix=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
-              echo "  → file: $base  pkgname=$pkgname  archsuffix=$archsuffix"
-              echo "    Cleaning old matches in custom-packages/$arch:"
-              ls -1d "custom-packages/$arch/${pkgname}*_${archsuffix}.ipk" 2>/dev/null || echo "(none)"
-              rm -f "custom-packages/$arch/${pkgname}*_${archsuffix}.ipk"
-              echo "Copy $base -> custom-packages/$arch/"
-              cp -a "$f" "custom-packages/$arch/"
+
+          # 逐 release 子目录处理，每个子目录决定目标 arch
+          find ./release-assets -mindepth 1 -maxdepth 1 -type d -print0 |
+            while IFS= read -r -d '' dir; do
+              bn=$(basename "$dir")
+              if [[ "$bn" =~ -common-openwrt- ]]; then
+                arch="common"
+              else
+                arch=$(echo "$bn" | sed -E 's/^natmapt-([^ ]+)-openwrt.*$/\1/')
+              fi
+
+              echo "Processing $bn -> arch=$arch"
+              mkdir -p "custom-packages/$arch"
+
+              # 在当前 release 目录内逐个处理以 natmapt 开头的 ipk（安全处理空格）
+              find "$dir" -maxdepth 1 -type f -name "natmapt*.ipk" -print0 |
+                while IFS= read -r -d '' f; do
+                  base=$(basename "$f")
+                  # pkgname 按你现有规则：开头到第一个下划线
+                  pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
+                  # archsuffix 为文件尾部（all 或具体架构）
+                  archsuffix=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
+
+                  echo "  → file: $base  pkgname=$pkgname  archsuffix=$archsuffix"
+
+                  # 列出候选并用正则逐个判定是否为同包同架构的旧版本，再删除
+                  echo "    Searching candidates in custom-packages/$arch (suffix=_${archsuffix}.ipk):"
+                  candidates=$(find "custom-packages/$arch" -maxdepth 1 -type f -name "*_${archsuffix}.ipk" -print)
+
+                  if [ -z "$candidates" ]; then
+                    echo "      (none)"
+                  else
+                    echo "$candidates" | while IFS= read -r cand; do
+                      bn_cand=$(basename "$cand")
+                      # 正则：以 pkgname 开头，随后可有 '-' 或 '_' 加任意字符，最后以 _archsuffix.ipk 结束
+                      if printf '%s\n' "$bn_cand" | grep -Eq "^${pkgname}([_-].+)?_${archsuffix}\.ipk$"; then
+                        echo "      Removing $bn_cand"
+                        rm -f -- "$cand"
+                      else
+                        echo "      Skip (not match) $bn_cand"
+                      fi
+                    done
+                  fi
+
+                  echo "    Copy $base -> custom-packages/$arch/"
+                  cp -a -- "$f" "custom-packages/$arch/"
+                done
             done
-          done
+
+          echo "📦 Final package tree:"
           ls -laR custom-packages
 
       - name: Update pkg artifacts
