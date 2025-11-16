@@ -210,7 +210,7 @@ jobs:
             mkdir -p "custom-packages/$arch"
             find "$dir" -maxdepth 1 -type f -name "natmapt*.ipk" -print0 |
               while IFS= read -r -d '' f; do
-              base=$(basename "$ipk")
+              base=$(basename "$f")
               pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
               archsuffix=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
               echo "  → file: $base  pkgname=$pkgname  archsuffix=$archsuffix"
@@ -218,7 +218,7 @@ jobs:
               ls -1d "custom-packages/$arch/${pkgname}*_${archsuffix}.ipk" 2>/dev/null || echo "(none)"
               rm -f "custom-packages/$arch/${pkgname}*_${archsuffix}.ipk"
               echo "Copy $base -> custom-packages/$arch/"
-              cp -a "$ipk" "custom-packages/$arch/"
+              cp -a "$f" "custom-packages/$arch/"
             done
           done
           ls -laR custom-packages
