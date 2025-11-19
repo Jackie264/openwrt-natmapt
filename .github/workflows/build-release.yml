@@ -199,7 +199,6 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # 逐 release 子目录处理，每个子目录决定目标 arch
           find ./release-assets -mindepth 1 -maxdepth 1 -type d -print0 |
             while IFS= read -r -d '' dir; do
               bn=$(basename "$dir")
@@ -212,18 +211,13 @@ jobs:
               echo "Processing $bn -> arch=$arch"
               mkdir -p "custom-packages/$arch"
 
-              # 在当前 release 目录内逐个处理以 natmapt 开头的 ipk（安全处理空格）
               find "$dir" -maxdepth 1 -type f -name "natmapt*.ipk" -print0 |
                 while IFS= read -r -d '' f; do
                   base=$(basename "$f")
-                  # pkgname 按你现有规则：开头到第一个下划线
                   pkgname=$(echo "$base" | sed -E 's/^([^_]+)_.*$/\1/')
-                  # archsuffix 为文件尾部（all 或具体架构）
                   archsuffix=$(echo "$base" | sed -E 's/.*_([^_]+)\.ipk$/\1/')
 
                   echo "  → file: $base  pkgname=$pkgname  archsuffix=$archsuffix"
-
-                  # 列出候选并用正则逐个判定是否为同包同架构的旧版本，再删除
                   echo "    Searching candidates in custom-packages/$arch (suffix=_${archsuffix}.ipk):"
                   candidates=$(find "custom-packages/$arch" -maxdepth 1 -type f -name "*_${archsuffix}.ipk" -print)
 
@@ -232,7 +226,6 @@ jobs:
                   else
                     echo "$candidates" | while IFS= read -r cand; do
                       bn_cand=$(basename "$cand")
-                      # 正则：以 pkgname 开头，随后可有 '-' 或 '_' 加任意字符，最后以 _archsuffix.ipk 结束
                       if printf '%s\n' "$bn_cand" | grep -Eq "^${pkgname}([_-].+)?_${archsuffix}\.ipk$"; then
                         echo "      Removing $bn_cand"
                         rm -f -- "$cand"
