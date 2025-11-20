@@ -7,15 +7,22 @@ on:
     branches:
       - master
     paths:
-      - 'Makefile'
       - 'files/**'
       - '!**/.github/**'
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Calculating PKG_MIRROR_HASH"]
+    types:
+      - completed
 
 jobs:
   check:
     name: 1. Check if build is required
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, 'Update-PKG_MIRROR_HASH')) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.name == 'Calculating PKG_MIRROR_HASH')
     outputs:
       should_build: ${{ steps.check_release.outputs.should_build }}
       tag_name: ${{ steps.version.outputs.tag_name }}
