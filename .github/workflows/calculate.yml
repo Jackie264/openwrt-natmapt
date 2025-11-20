@@ -28,4 +28,4 @@ jobs:
           COMMIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAKEFILE: Makefile
           TARGET_VERSION: "24.10.4"
-          COMMIT_MESSAGE: "Update-PKG_MIRROR_HASH"
+          COMMIT_MESSAGE: "Update-PKG_MIRROR_HASH to $NEW_HASH"
