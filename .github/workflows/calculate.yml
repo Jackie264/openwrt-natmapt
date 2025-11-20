@@ -27,4 +27,4 @@ jobs:
         env:
           COMMIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MAKEFILE: Makefile
-          TARGET_VERSION: ${{ inputs.target_version }} || "24.10.4"
+          TARGET_VERSION: "24.10.4"
