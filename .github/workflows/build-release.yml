@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: 🧾 Checkout repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 🏷️ Extract version info from Makefile
         id: version
@@ -89,7 +89,7 @@ jobs:
 
     steps:
       - name: 🧾 Checkout repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 📛 Extract PKG_NAME from Makefile
         run: |
@@ -175,7 +175,7 @@ jobs:
 
     steps:
       - name: 🧾 Checkout repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       
       - name: ⬇️ Download all build artifacts
         uses: actions/download-artifact@v6
@@ -195,7 +195,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout custom-packages repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: OneNAS-space/custom-packages
           token: ${{ secrets.CUSTOM_PACKAGES_TOKEN }}
